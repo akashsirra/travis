@@ -79,8 +79,29 @@ function localAction(text) {
   return null;
 }
 
+// Short, original ad-lib-style confirmations. These are text responses spoken by
+// the phone's TTS engine; they are not a recreation of any artist's voice.
+function actionAdlib(name) {
+  const map = {
+    set_flashlight: 'It’s lit.',
+    set_volume: 'Yeah.',
+    set_brightness: 'It’s lit.',
+    set_wifi: 'Yeah.',
+    set_bluetooth: 'Yeah.',
+    media_control: 'What?',
+    open_app: 'Let’s go.',
+    open_url: 'Yeah.',
+    take_photo: 'It’s lit.',
+    vibrate: 'Yeah.',
+    set_timer: 'Alright.',
+    set_alarm: 'Alright.',
+    lock_screen: 'Shh.'
+  };
+  return map[name] || 'Yeah.';
+}
+
 function formatToolReply(name, output) {
-  if (!output) return 'Done.';
+  if (!output) return actionAdlib(name);
   if (name === 'get_battery_status') {
     try {
       const x = JSON.parse(output);
@@ -88,8 +109,8 @@ function formatToolReply(name, output) {
     } catch {}
   }
   if (name === 'get_clipboard') return output || 'Clipboard is empty.';
-  if (name === 'take_photo') return 'Photo taken.';
-  return 'Done.';
+  if (name === 'take_photo') return 'Photo taken. It’s lit.';
+  return actionAdlib(name);
 }
 
 async function runLocalFirst(text) {
@@ -110,9 +131,9 @@ async function runAI(text, history) {
     history.push({ role: 'model', parts: content?.parts || [] });
     const failed = results.filter(x => !x.result.success);
     if (failed.length) return `I couldn't complete ${failed.map(x => x.call.name).join(', ')}.`;
-    return 'Done.';
+    return 'Yeah.';
   }
-  const reply = response.text || 'Done.';
+  const reply = response.text || 'Yeah.';
   history.push({ role: 'model', parts: content?.parts || [{ text: reply }] });
   return reply;
 }
