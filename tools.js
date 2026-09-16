@@ -1,8 +1,8 @@
 const { execFile } = require('child_process');
 
-function runCommand(cmd, args = []) {
+function runCommand(cmd, args = [], timeout = 8000) {
   return new Promise((resolve) => {
-    execFile(cmd, args, { timeout: 15000 }, (err, stdout, stderr) => {
+    execFile(cmd, args, { timeout }, (err, stdout, stderr) => {
       if (err) return resolve({ success: false, error: err.message, stderr: (stderr || '').trim() });
       resolve({ success: true, output: (stdout || '').trim() });
     });
@@ -11,6 +11,7 @@ function runCommand(cmd, args = []) {
 
 const toolDeclarations = [
   { name: 'set_alarm', description: 'Set an Android alarm at an exact hour and minute.', parameters: { type: 'OBJECT', properties: { hour: { type: 'INTEGER' }, minute: { type: 'INTEGER' }, label: { type: 'STRING' } }, required: ['hour', 'minute'] } },
+  { name: 'set_timer', description: 'Set an Android countdown timer in seconds.', parameters: { type: 'OBJECT', properties: { seconds: { type: 'INTEGER' }, label: { type: 'STRING' } }, required: ['seconds'] } },
   { name: 'show_notification', description: 'Show a notification on the phone.', parameters: { type: 'OBJECT', properties: { title: { type: 'STRING' }, content: { type: 'STRING' } }, required: ['title', 'content'] } },
   { name: 'speak', description: 'Speak a short reply aloud with Android text to speech.', parameters: { type: 'OBJECT', properties: { text: { type: 'STRING' } }, required: ['text'] } },
   { name: 'show_toast', description: 'Show a short Android toast message.', parameters: { type: 'OBJECT', properties: { text: { type: 'STRING' } }, required: ['text'] } },
@@ -23,7 +24,22 @@ const toolDeclarations = [
   { name: 'get_clipboard', description: 'Read the current phone clipboard.', parameters: { type: 'OBJECT', properties: {} } },
   { name: 'set_clipboard', description: 'Replace the phone clipboard with text.', parameters: { type: 'OBJECT', properties: { text: { type: 'STRING' } }, required: ['text'] } },
   { name: 'open_url', description: 'Open a URL using the phone browser or registered app.', parameters: { type: 'OBJECT', properties: { url: { type: 'STRING' } }, required: ['url'] } },
+  { name: 'set_wifi', description: 'Turn Wi-Fi on or off.', parameters: { type: 'OBJECT', properties: { state: { type: 'STRING', enum: ['on', 'off'] } }, required: ['state'] } },
+  { name: 'set_bluetooth', description: 'Turn Bluetooth on or off.', parameters: { type: 'OBJECT', properties: { state: { type: 'STRING', enum: ['on', 'off'] } }, required: ['state'] } },
+  { name: 'media_control', description: 'Control media playback: play, pause, next, previous.', parameters: { type: 'OBJECT', properties: { action: { type: 'STRING', enum: ['play', 'pause', 'next', 'previous'] } }, required: ['action'] } },
+  { name: 'lock_screen', description: 'Lock the Android screen immediately.', parameters: { type: 'OBJECT', properties: {} } },
+  { name: 'open_app', description: 'Open one of the supported common apps: YouTube, Chrome, WhatsApp, Instagram, Spotify, Gmail, Maps.', parameters: { type: 'OBJECT', properties: { app: { type: 'STRING' } }, required: ['app'] } },
 ];
+
+const APP_PACKAGES = {
+  youtube: 'com.google.android.youtube',
+  chrome: 'com.android.chrome',
+  whatsapp: 'com.whatsapp',
+  instagram: 'com.instagram.android',
+  spotify: 'com.spotify.music',
+  gmail: 'com.google.android.gm',
+  maps: 'com.google.android.apps.maps',
+};
 
 async function executeTool(name, args = {}) {
   try {
@@ -33,6 +49,8 @@ async function executeTool(name, args = {}) {
         if (args.label) a.push('-e', 'android.intent.extra.alarm.MESSAGE', String(args.label));
         return runCommand('am', a);
       }
+      case 'set_timer':
+        return runCommand('am', ['start', '-a', 'android.intent.action.SET_TIMER', '--ei', 'android.intent.extra.alarm.LENGTH', String(Math.max(1, Number(args.seconds))), '--ez', 'android.intent.extra.alarm.SKIP_UI', 'true']);
       case 'show_notification': return runCommand('termux-notification', ['--title', String(args.title), '--content', String(args.content)]);
       case 'speak': return runCommand('termux-tts-speak', [String(args.text)]);
       case 'show_toast': return runCommand('termux-toast', [String(args.text)]);
@@ -48,7 +66,7 @@ async function executeTool(name, args = {}) {
       case 'vibrate': return runCommand('termux-vibrate', ['-d', String(Math.max(1, Math.min(5000, args.duration_ms || 500)))]);
       case 'take_photo': {
         const path = `${process.env.HOME}/storage/shared/Pictures/travis_${Date.now()}.jpg`;
-        const r = await runCommand('termux-camera-photo', ['-c', '0', path]);
+        const r = await runCommand('termux-camera-photo', ['-c', '0', path], 15000);
         if (r.success) await runCommand('termux-media-scan', [path]);
         return r.success ? { ...r, output: path } : r;
       }
@@ -67,6 +85,19 @@ async function executeTool(name, args = {}) {
       case 'get_clipboard': return runCommand('termux-clipboard-get');
       case 'set_clipboard': return runCommand('termux-clipboard-set', [String(args.text)]);
       case 'open_url': return runCommand('termux-open-url', [String(args.url)]);
+      case 'set_wifi': return runCommand('termux-wifi-enable', [args.state === 'off' ? 'false' : 'true']);
+      case 'set_bluetooth': return runCommand('termux-bluetooth-enable', [args.state === 'off' ? 'false' : 'true']);
+      case 'media_control': {
+        const keys = { play: '126', pause: '127', next: '87', previous: '88' };
+        return runCommand('input', ['keyevent', keys[args.action] || '126']);
+      }
+      case 'lock_screen': return runCommand('input', ['keyevent', '26']);
+      case 'open_app': {
+        const key = String(args.app || '').toLowerCase().trim();
+        const pkg = APP_PACKAGES[key];
+        if (!pkg) return { success: false, error: `Unsupported app: ${key}` };
+        return runCommand('monkey', ['-p', pkg, '1']);
+      }
       default: return { success: false, error: `Unknown tool: ${name}` };
     }
   } catch (error) {
