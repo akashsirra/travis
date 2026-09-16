@@ -4,6 +4,7 @@ import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -21,13 +22,13 @@ public class MainActivity extends android.app.Activity {
         root.setGravity(Gravity.CENTER_HORIZONTAL);
 
         TextView title = new TextView(this);
-        title.setText("TRAVIS VOICE");
+        title.setText("TRAVIS VOICE v1.1");
         title.setTextSize(28);
         title.setGravity(Gravity.CENTER);
         root.addView(title, new LinearLayout.LayoutParams(-1, -2));
 
         status = new TextView(this);
-        status.setText("Native streaming voice layer");
+        status.setText("Deep RAGE voice profile • Google TTS");
         status.setTextSize(16);
         status.setGravity(Gravity.CENTER);
         root.addView(status, new LinearLayout.LayoutParams(-1, -2));
@@ -36,16 +37,69 @@ public class MainActivity extends android.app.Activity {
         start.setText("START TRAVIS");
         root.addView(start, new LinearLayout.LayoutParams(-1, -2));
 
+        Button test = new Button(this);
+        test.setText("TEST RAGE VOICE");
+        root.addView(test, new LinearLayout.LayoutParams(-1, -2));
+
+        Button ttsSettings = new Button(this);
+        ttsSettings.setText("VOICE / TTS SETTINGS");
+        root.addView(ttsSettings, new LinearLayout.LayoutParams(-1, -2));
+
         Button stop = new Button(this);
         stop.setText("STOP");
         root.addView(stop, new LinearLayout.LayoutParams(-1, -2));
         setContentView(root);
 
         start.setOnClickListener(v -> startTravis());
+        test.setOnClickListener(v -> testVoice());
+        ttsSettings.setOnClickListener(v -> {
+            try {
+                startActivity(new Intent(Settings.ACTION_TEXT_TO_SPEECH_SETTINGS));
+            } catch (Exception e) {
+                startActivity(new Intent(Settings.ACTION_SETTINGS));
+            }
+        });
         stop.setOnClickListener(v -> {
             stopService(new Intent(this, VoiceService.class));
             status.setText("Stopped");
         });
+    }
+
+    private void testVoice() {
+        android.speech.tts.TextToSpeech t = new android.speech.tts.TextToSpeech(this, result -> {
+            if (result == android.speech.tts.TextToSpeech.SUCCESS) {
+                t.setLanguage(java.util.Locale.US);
+                t.setPitch(0.62f);
+                t.setSpeechRate(0.90f);
+                android.speech.tts.Voice selected = null;
+                java.util.Set<android.speech.tts.Voice> voices = t.getVoices();
+                String[] preferred = {
+                        "en-us-x-sfg#male_1-local",
+                        "en-us-x-sfg#male_2-local",
+                        "en-us-x-tpc#male_1-local",
+                        "en-us-x-tpc#male_2-local"
+                };
+                if (voices != null) {
+                    for (String wanted : preferred) {
+                        for (android.speech.tts.Voice v : voices) {
+                            if (v != null && wanted.equalsIgnoreCase(v.getName())) { selected = v; break; }
+                        }
+                        if (selected != null) break;
+                    }
+                }
+                if (selected != null) {
+                    t.setVoice(selected);
+                    t.setPitch(0.62f);
+                    t.setSpeechRate(0.90f);
+                    status.setText("Male Google voice: " + selected.getName());
+                } else {
+                    status.setText("No Google male voice installed — open TTS Settings");
+                }
+                t.speak("Yeah. Travis is ready.", android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "test");
+            } else {
+                status.setText("TTS initialization failed");
+            }
+        }, "com.google.android.tts");
     }
 
     private void startTravis() {
