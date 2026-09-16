@@ -37,7 +37,7 @@ public class VoiceService extends Service implements RecognitionListener {
     private static final String CHANNEL = "travis_voice";
     private static final String ENDPOINT = "http://127.0.0.1:8787/voice";
 
-    // Original Travis voice profile: low, slow and laid-back. This does not clone a real person.
+    // Original Travis voice profile: deep, slow and laid-back. This does not clone a real person.
     private static final float RAGE_PITCH = 0.62f;
     private static final float RAGE_RATE = 0.90f;
 
@@ -64,7 +64,9 @@ public class VoiceService extends Service implements RecognitionListener {
 
         tts = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) configureRageVoice();
+            else Log.e(TAG, "Google TTS init failed: " + status);
         }, "com.google.android.tts");
+
         recognizerIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         recognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
         recognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
@@ -88,31 +90,52 @@ public class VoiceService extends Service implements RecognitionListener {
             tts.setPitch(RAGE_PITCH);
             tts.setSpeechRate(RAGE_RATE);
 
-            // Google TTS exposes gender in voice features on many devices. Prefer a real
-            // English male voice instead of merely lowering a female/default voice's pitch.
             Set<Voice> voices = tts.getVoices();
             Voice best = null;
-            if (voices != null) {
-                for (Voice voice : voices) {
-                    if (voice == null || voice.getLocale() == null) continue;
-                    Locale locale = voice.getLocale();
-                    if (!"en".equalsIgnoreCase(locale.getLanguage()) || !"US".equalsIgnoreCase(locale.getCountry())) continue;
-                    String name = voice.getName() == null ? "" : voice.getName().toLowerCase(Locale.ROOT);
-                    String features = voice.getFeatures() == null ? "" : voice.getFeatures().toString().toLowerCase(Locale.ROOT);
-                    boolean male = name.contains("#male") || name.contains("male") || features.contains("male");
-                    if (!male) continue;
 
-                    // Prefer local male voices so Travis stays fast and works offline.
-                    if (name.contains("#male_1-local")) { best = voice; break; }
-                    if (best == null && name.contains("#male") && !voice.isNetworkConnectionRequired()) best = voice;
-                    if (best == null && male) best = voice;
+            if (voices != null) {
+                // Prefer known Google US English male voice IDs when installed.
+                String[] preferred = {
+                        "en-us-x-sfg#male_1-local",
+                        "en-us-x-sfg#male_2-local",
+                        "en-us-x-tpc#male_1-local",
+                        "en-us-x-tpc#male_2-local",
+                        "en-us-x-sfg#male_1",
+                        "en-us-x-sfg#male_2"
+                };
+                for (String wanted : preferred) {
+                    for (Voice voice : voices) {
+                        if (voice != null && wanted.equalsIgnoreCase(voice.getName())) {
+                            best = voice;
+                            break;
+                        }
+                    }
+                    if (best != null) break;
+                }
+
+                // Otherwise select any US-English voice explicitly marked male.
+                if (best == null) {
+                    for (Voice voice : voices) {
+                        if (voice == null || voice.getLocale() == null) continue;
+                        Locale locale = voice.getLocale();
+                        if (!"en".equalsIgnoreCase(locale.getLanguage()) || !"US".equalsIgnoreCase(locale.getCountry())) continue;
+                        String name = voice.getName() == null ? "" : voice.getName().toLowerCase(Locale.ROOT);
+                        String features = voice.getFeatures() == null ? "" : voice.getFeatures().toString().toLowerCase(Locale.ROOT);
+                        if (name.contains("male") || features.contains("male")) {
+                            if (!voice.isNetworkConnectionRequired()) { best = voice; break; }
+                            if (best == null) best = voice;
+                        }
+                    }
                 }
             }
+
             if (best != null) {
                 tts.setVoice(best);
-                Log.i(TAG, "RAGE male voice: " + best.getName());
+                tts.setPitch(RAGE_PITCH);
+                tts.setSpeechRate(RAGE_RATE);
+                Log.i(TAG, "TRAVIS VOICE SELECTED: " + best.getName());
             } else {
-                Log.w(TAG, "No English male Google TTS voice found; using pitch-shifted default");
+                Log.w(TAG, "No Google US-English male voice is installed. Using current voice with deep profile.");
             }
         } catch (Exception e) {
             Log.w(TAG, "RAGE voice setup", e);
@@ -173,7 +196,7 @@ public class VoiceService extends Service implements RecognitionListener {
             try {
                 c = (HttpURLConnection) new URL(ENDPOINT).openConnection();
                 c.setRequestMethod("POST");
-                c.setConnectTimeout(300);
+                c.setConnectTimeout(1200);
                 c.setReadTimeout(5000);
                 c.setDoOutput(true);
                 c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
@@ -189,11 +212,12 @@ public class VoiceService extends Service implements RecognitionListener {
                     } catch (Exception ignored) {}
                     speak(reply);
                 } else {
-                    speak("Travis bridge is not ready");
+                    Log.w(TAG, "Voice bridge HTTP " + code);
+                    speak("Travis bridge error");
                 }
             } catch (Exception e) {
-                Log.e(TAG, "bridge", e);
-                speak("Start the Travis voice bridge");
+                Log.e(TAG, "Voice bridge connection failed", e);
+                speak("Travis bridge is not reachable");
             } finally {
                 if (c != null) c.disconnect();
                 listen(0);
