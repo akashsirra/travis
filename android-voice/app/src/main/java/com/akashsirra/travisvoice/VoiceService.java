@@ -42,7 +42,7 @@ public class VoiceService extends Service implements RecognitionListener {
     private Intent recognizerIntent;
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ExecutorService network=Executors.newSingleThreadExecutor();
-    private boolean commandMode=false,wakeDispatched=false,stopping=false,listening=false;
+    private boolean commandMode=false,wakeDetected=false,stopping=false,listening=false;
 
     @Override public void onCreate(){
         super.onCreate(); createChannel();
@@ -74,44 +74,47 @@ public class VoiceService extends Service implements RecognitionListener {
         }catch(Exception e){Log.e(TAG,"voice setup",e);}
     }
 
-    // SpeechRecognizer is stateful. Never start a new session while the previous one is cancelling.
+    // Never cancel/start the recognizer from a partial result. Android requires a new
+    // session only after onResults/onError from the previous session.
     private void listen(long delay){
         if(stopping||recognizer==null)return;
         main.postDelayed(()->{
             if(stopping||recognizer==null)return;
-            try{
-                if(listening){try{recognizer.cancel();}catch(Exception ignored){}listening=false;}
-                main.postDelayed(()->{
-                    if(stopping||recognizer==null)return;
-                    try{wakeDispatched=false;recognizer.startListening(recognizerIntent);listening=true;}
-                    catch(Exception e){Log.e(TAG,"startListening",e);listen(700);}
-                },300);
-            }catch(Exception e){Log.e(TAG,"cancelListening",e);listen(700);}
+            try{wakeDetected=false;recognizer.startListening(recognizerIntent);listening=true;}
+            catch(Exception e){Log.e(TAG,"startListening",e);listening=false;listen(1000);}
         },Math.max(0,delay));
     }
 
     private void inspectWake(String raw){
         String text=raw==null?"":raw.trim();
-        if(text.isEmpty()||commandMode||wakeDispatched)return;
-        String lower=text.toLowerCase(Locale.ROOT);int p=lower.indexOf("travis");if(p<0)return;
-        wakeDispatched=true;String rem=text.substring(p+7).trim();
-        if(rem.isEmpty()){
-            commandMode=true;
-            if(listening){try{recognizer.cancel();}catch(Exception ignored){}listening=false;}
-            speak("Yeah?");
-            listen(900);
-        }else sendToTravis(rem);
+        if(text.isEmpty()||commandMode||wakeDetected)return;
+        String lower=text.toLowerCase(Locale.ROOT);
+        if(lower.contains("travis"))wakeDetected=true;
     }
 
     private void handleFinal(String raw){
         String text=raw==null?"":raw.trim();
         if(text.isEmpty()){listen(300);return;}
-        if(!commandMode){inspectWake(text);if(!wakeDispatched)listen(300);return;}
-        commandMode=false;wakeDispatched=false;sendToTravis(text);
+        if(!commandMode){
+            String lower=text.toLowerCase(Locale.ROOT);
+            int p=lower.indexOf("travis");
+            if(p<0){listen(300);return;}
+            String rem=text.substring(p+7).trim();
+            if(rem.isEmpty()){
+                commandMode=true;
+                speak("Yeah?");
+                listen(900);
+            }else{
+                sendToTravis(rem);
+            }
+            return;
+        }
+        commandMode=false;
+        sendToTravis(text);
     }
 
     private void sendToTravis(String text){
-        commandMode=false;wakeDispatched=true;
+        commandMode=false;wakeDetected=true;
         network.execute(()->{
             Exception last=null;
             for(int attempt=1;attempt<=3&&!stopping;attempt++){
@@ -141,8 +144,8 @@ public class VoiceService extends Service implements RecognitionListener {
     @Override public void onBeginningOfSpeech(){listening=true;}
     @Override public void onRmsChanged(float r){}
     @Override public void onBufferReceived(byte[] b){}
-    @Override public void onEndOfSpeech(){listening=false;if(commandMode)main.post(()->listen(300));}
-    @Override public void onError(int e){listening=false;listen(600);}
+    @Override public void onEndOfSpeech(){listening=false;}
+    @Override public void onError(int e){listening=false;Log.w(TAG,"recognition error="+e);listen(600);}
     @Override public void onResults(Bundle b){listening=false;ArrayList<String> r=b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);handleFinal(r!=null&&!r.isEmpty()?r.get(0):"");}
     @Override public void onPartialResults(Bundle b){ArrayList<String> r=b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);if(r!=null&&!r.isEmpty())inspectWake(r.get(0));}
     @Override public void onEvent(int e,Bundle p){}
