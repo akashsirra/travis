@@ -22,3 +22,9 @@ jobs:
       - name: Build Travis Voice
         working-directory: android-voice
         run: gradle :app:assembleDebug --no-daemon
+      - name: Upload Travis Voice APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: travis-voice-debug-apk
+          path: android-voice/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
