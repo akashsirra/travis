@@ -7,14 +7,14 @@ A fast, local-first Android assistant for Termux.
 Travis uses a two-speed architecture:
 
 1. **Fast path:** common phone actions are parsed locally and executed immediately. No AI/network round trip.
-2. **AI path:** natural-language requests go to Gemini function calling, which can invoke the same centralized phone tools.
-3. **Voice path:** Vosk runs locally through the existing HTTP server on `127.0.0.1:5055`; voice commands are handed to the same Travis core.
+2. **AI path:** natural-language requests go to Gemini function calling, which can invoke the same centralized phone tools and receive the actual tool results back.
+3. **Voice path:** the Android companion app uses Android's native `SpeechRecognizer` for speech-to-text, detects the `Travis` wake word, and sends recognized commands to the local Travis HTTP bridge at `127.0.0.1:8787/voice`.
 
-This keeps simple actions fast while preserving natural-language flexibility.
+The older Vosk/`127.0.0.1:5055` description is no longer used by the current Android voice path.
 
 ## Setup
 
-Install Node.js, Termux:API, FFmpeg, and the Vosk HTTP server used by `wake_listen.js`.
+Install Node.js and Termux:API.
 
 ```bash
 npm install
@@ -27,17 +27,23 @@ Run text mode:
 npm start
 ```
 
-Run the wake listener:
+Run the local voice bridge:
 
 ```bash
-npm run voice
+npm run voice-server
 ```
 
-Optional voice tuning:
+Check the bridge:
 
 ```bash
-export TRAVIS_WAKE_SECONDS=2
-export TRAVIS_COMMAND_SECONDS=4
+curl http://127.0.0.1:8787/health
+```
+
+The Android voice companion can then connect to the bridge while the Travis Termux process is running.
+
+Optional tuning:
+
+```bash
 export TRAVIS_MODEL='gemini-3.8-flash'
 ```
 
