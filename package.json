@@ -1,15 +1,16 @@
 {
   "name": "claude-assistant",
   "version": "1.0.0",
-  "description": "Fast local-first Android assistant for Termux",
+  "description": "Fast local-first Android assistant for Termux with a native streaming voice companion",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "voice": "node wake_listen.js",
-    "check": "node --check index.js && node --check tools.js && node --check wake_listen.js",
+    "voice-server": "node voice_server.js",
+    "check": "node --check index.js && node --check tools.js && node --check wake_listen.js && node --check voice_server.js",
     "test": "node --test"
   },
-  "keywords": ["android", "termux", "assistant", "gemini", "vosk"],
+  "keywords": ["android", "termux", "assistant", "gemini", "voice"],
   "author": "Akash Sirra",
   "license": "ISC",
   "type": "commonjs",
