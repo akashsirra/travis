@@ -9,11 +9,9 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.view.Gravity;
 
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
-
 public class MainActivity extends android.app.Activity {
     private static final int REQ_MIC = 100;
+    private TextView status;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -28,7 +26,7 @@ public class MainActivity extends android.app.Activity {
         title.setGravity(Gravity.CENTER);
         root.addView(title, new LinearLayout.LayoutParams(-1, -2));
 
-        TextView status = new TextView(this);
+        status = new TextView(this);
         status.setText("Native streaming voice layer");
         status.setTextSize(16);
         status.setGravity(Gravity.CENTER);
@@ -43,27 +41,25 @@ public class MainActivity extends android.app.Activity {
         root.addView(stop, new LinearLayout.LayoutParams(-1, -2));
         setContentView(root);
 
-        start.setOnClickListener(v -> startTravis(status));
+        start.setOnClickListener(v -> startTravis());
         stop.setOnClickListener(v -> {
             stopService(new Intent(this, VoiceService.class));
             status.setText("Stopped");
         });
     }
 
-    private void startTravis(TextView status) {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
+    private void startTravis() {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
             return;
         }
         Intent intent = new Intent(this, VoiceService.class);
-        ContextCompat.startForegroundService(this, intent);
+        startForegroundService(intent);
         status.setText("Listening… say Travis");
     }
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
-        if (requestCode == REQ_MIC && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
-            startTravis(new TextView(this));
-        }
+        if (requestCode == REQ_MIC && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) startTravis();
     }
 }
