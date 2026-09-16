@@ -32,25 +32,26 @@ const toolDeclarations = [
 ];
 
 const APP_PACKAGES = {
-  youtube: 'com.google.android.youtube',
-  chrome: 'com.android.chrome',
-  whatsapp: 'com.whatsapp',
-  instagram: 'com.instagram.android',
-  spotify: 'com.spotify.music',
-  gmail: 'com.google.android.gm',
-  maps: 'com.google.android.apps.maps',
+  youtube: 'com.google.android.youtube', chrome: 'com.android.chrome', whatsapp: 'com.whatsapp', instagram: 'com.instagram.android',
+  spotify: 'com.spotify.music', gmail: 'com.google.android.gm', maps: 'com.google.android.apps.maps',
 };
 
 async function executeTool(name, args = {}) {
   try {
     switch (name) {
       case 'set_alarm': {
-        const a = ['start', '-a', 'android.intent.action.SET_ALARM', '--ei', 'android.intent.extra.alarm.HOUR', String(args.hour), '--ei', 'android.intent.extra.alarm.MINUTES', String(args.minute), '--ez', 'android.intent.extra.alarm.SKIP_UI', 'true'];
+        const hour = Number(args.hour), minute = Number(args.minute);
+        if (!Number.isInteger(hour) || hour < 0 || hour > 23) return { success: false, error: `Invalid hour: ${args.hour}` };
+        if (!Number.isInteger(minute) || minute < 0 || minute > 59) return { success: false, error: `Invalid minute: ${args.minute}` };
+        const a = ['start', '-a', 'android.intent.action.SET_ALARM', '--ei', 'android.intent.extra.alarm.HOUR', String(hour), '--ei', 'android.intent.extra.alarm.MINUTES', String(minute), '--ez', 'android.intent.extra.alarm.SKIP_UI', 'true'];
         if (args.label) a.push('-e', 'android.intent.extra.alarm.MESSAGE', String(args.label));
         return runCommand('am', a);
       }
-      case 'set_timer':
-        return runCommand('am', ['start', '-a', 'android.intent.action.SET_TIMER', '--ei', 'android.intent.extra.alarm.LENGTH', String(Math.max(1, Number(args.seconds))), '--ez', 'android.intent.extra.alarm.SKIP_UI', 'true']);
+      case 'set_timer': {
+        const seconds = Number(args.seconds);
+        if (!Number.isFinite(seconds) || seconds < 1) return { success: false, error: `Invalid timer duration: ${args.seconds}` };
+        return runCommand('am', ['start', '-a', 'android.intent.action.SET_TIMER', '--ei', 'android.intent.extra.alarm.LENGTH', String(Math.round(seconds)), '--ez', 'android.intent.extra.alarm.SKIP_UI', 'true']);
+      }
       case 'show_notification': return runCommand('termux-notification', ['--title', String(args.title), '--content', String(args.content)]);
       case 'speak': return runCommand('termux-tts-speak', [String(args.text)]);
       case 'show_toast': return runCommand('termux-toast', [String(args.text)]);
@@ -66,20 +67,28 @@ async function executeTool(name, args = {}) {
       case 'vibrate': return runCommand('termux-vibrate', ['-d', String(Math.max(1, Math.min(5000, args.duration_ms || 500)))]);
       case 'take_photo': {
         const path = `${process.env.HOME}/storage/shared/Pictures/travis_${Date.now()}.jpg`;
-        const r = await runCommand('termux-camera-photo', ['-c', '0', path], 15000);
+        const r = await runCommand('termux-camera-photo', ['-c', '0', path], 30000);
         if (r.success) await runCommand('termux-media-scan', [path]);
         return r.success ? { ...r, output: path } : r;
       }
       case 'set_volume': {
-        const pct = Math.max(0, Math.min(100, Number(args.level)));
+        const pct = Number(args.level);
+        if (!Number.isFinite(pct) || pct < 0 || pct > 100) return { success: false, error: `Volume must be between 0 and 100: ${args.level}` };
         const s = await runCommand('termux-volume');
         if (!s.success) return s;
-        const music = JSON.parse(s.output).find(x => x.stream === 'music');
-        if (!music) return { success: false, error: 'Music volume stream not found' };
-        return runCommand('termux-volume', ['music', String(Math.round(pct / 100 * music.max_volume))]);
+        let streams;
+        try { streams = JSON.parse(s.output); } catch (error) { return { success: false, error: `Could not parse Termux volume response: ${error.message}` }; }
+        if (!Array.isArray(streams)) return { success: false, error: 'Termux volume response was not a stream list' };
+        const music = streams.find(x => String(x?.stream || '').toLowerCase() === 'music');
+        if (!music || !Number.isFinite(Number(music.max_volume))) {
+          const names = streams.map(x => x?.stream).filter(Boolean).join(', ');
+          return { success: false, error: `Music volume stream not found. Available streams: ${names || 'none'}` };
+        }
+        return runCommand('termux-volume', ['music', String(Math.round(pct / 100 * Number(music.max_volume)))]);
       }
       case 'set_brightness': {
-        const pct = Math.max(0, Math.min(100, Number(args.level)));
+        const pct = Number(args.level);
+        if (!Number.isFinite(pct) || pct < 0 || pct > 100) return { success: false, error: `Brightness must be between 0 and 100: ${args.level}` };
         return runCommand('termux-brightness', [String(Math.round(pct * 255 / 100))]);
       }
       case 'get_clipboard': return runCommand('termux-clipboard-get');
