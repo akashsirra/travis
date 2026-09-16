@@ -1,6 +1,6 @@
 {
-  "name": "travis-phone-assistant",
-  "version": "2.0.0",
+  "name": "claude-assistant",
+  "version": "1.0.0",
   "description": "Fast local-first Android assistant for Termux",
   "main": "index.js",
   "scripts": {
