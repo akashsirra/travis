@@ -13,10 +13,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Install Android SDK 36
+      - name: Verify Android SDK
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list_installed | grep -E 'platforms;android-36|build-tools;36' || true
       - name: Build Travis Voice
         working-directory: android-voice
         run: gradle :app:assembleDebug --no-daemon
