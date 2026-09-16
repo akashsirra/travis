@@ -17,6 +17,10 @@ import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
 import android.util.Log;
 
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -66,7 +70,7 @@ public class VoiceService extends Service implements RecognitionListener {
         }
         recognizer = SpeechRecognizer.createSpeechRecognizer(this);
         recognizer.setRecognitionListener(this);
-        listen(100);
+        listen(0);
     }
 
     private void listen(long delayMs) {
@@ -79,7 +83,7 @@ public class VoiceService extends Service implements RecognitionListener {
                 recognizer.startListening(recognizerIntent);
             } catch (Exception e) {
                 Log.e(TAG, "startListening", e);
-                listen(500);
+                listen(250);
             }
         }, delayMs);
     }
@@ -96,7 +100,7 @@ public class VoiceService extends Service implements RecognitionListener {
         if (remainder.isEmpty()) {
             commandMode = true;
             speak("Yes?");
-            listen(80);
+            listen(0);
         } else {
             sendToTravis(remainder);
         }
@@ -104,10 +108,10 @@ public class VoiceService extends Service implements RecognitionListener {
 
     private void handleFinal(String raw) {
         String text = raw == null ? "" : raw.trim();
-        if (text.isEmpty()) { listen(80); return; }
+        if (text.isEmpty()) { listen(0); return; }
         if (!commandMode) {
             inspectWake(text);
-            if (!wakeDispatched) listen(80);
+            if (!wakeDispatched) listen(0);
             return;
         }
         commandMode = false;
@@ -123,27 +127,45 @@ public class VoiceService extends Service implements RecognitionListener {
             try {
                 c = (HttpURLConnection) new URL(ENDPOINT).openConnection();
                 c.setRequestMethod("POST");
-                c.setConnectTimeout(500);
-                c.setReadTimeout(10000);
+                c.setConnectTimeout(300);
+                c.setReadTimeout(5000);
                 c.setDoOutput(true);
                 c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
                 String body = "{\"text\":\"" + jsonEscape(text) + "\"}";
                 try (OutputStream out = c.getOutputStream()) { out.write(body.getBytes(StandardCharsets.UTF_8)); }
                 int code = c.getResponseCode();
-                if (code >= 200 && code < 300) speak("Done");
-                else speak("Travis bridge is not ready");
+                if (code >= 200 && code < 300) {
+                    String response = readBody(c);
+                    String reply = "Done.";
+                    try {
+                        JSONObject json = new JSONObject(response);
+                        reply = json.optString("reply", reply);
+                    } catch (Exception ignored) {}
+                    speak(reply);
+                } else {
+                    speak("Travis bridge is not ready");
+                }
             } catch (Exception e) {
                 Log.e(TAG, "bridge", e);
                 speak("Start the Travis voice bridge");
             } finally {
                 if (c != null) c.disconnect();
-                listen(120);
+                listen(0);
             }
         });
     }
 
+    private static String readBody(HttpURLConnection c) throws Exception {
+        try (BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8))) {
+            StringBuilder b = new StringBuilder();
+            String line;
+            while ((line = r.readLine()) != null) b.append(line);
+            return b.toString();
+        }
+    }
+
     private static String jsonEscape(String s) { return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r"); }
-    private void speak(String text) { if (tts != null) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "travis"); }
+    private void speak(String text) { if (tts != null && text != null && !text.isEmpty()) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "travis"); }
 
     private void createChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
@@ -165,8 +187,8 @@ public class VoiceService extends Service implements RecognitionListener {
     @Override public void onBeginningOfSpeech() {}
     @Override public void onRmsChanged(float rmsdB) {}
     @Override public void onBufferReceived(byte[] buffer) {}
-    @Override public void onEndOfSpeech() { if (commandMode) main.postDelayed(() -> listen(80), 80); }
-    @Override public void onError(int error) { listen(180); }
+    @Override public void onEndOfSpeech() { if (commandMode) main.post(() -> listen(0)); }
+    @Override public void onError(int error) { listen(100); }
     @Override public void onResults(Bundle results) { ArrayList<String> r = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION); handleFinal(r != null && !r.isEmpty() ? r.get(0) : ""); }
     @Override public void onPartialResults(Bundle results) { ArrayList<String> r = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION); if (r != null && !r.isEmpty()) inspectWake(r.get(0)); }
     @Override public void onEvent(int eventType, Bundle params) {}
