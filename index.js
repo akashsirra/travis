@@ -1,261 +1,118 @@
-// Travis — a personal phone assistant powered by the Gemini API,
-// with the ability to control your Android phone via Termux:API.
+// Travis v2 — fast local-first Android assistant.
+// Common phone actions never touch the network; Gemini is the fallback for natural language.
 
-const { GoogleGenAI, Type } = require("@google/genai");
-const { execFile } = require("child_process");
-const readline = require("readline");
+const { GoogleGenAI } = require('@google/genai');
+const readline = require('readline');
+const { toolDeclarations, executeTool } = require('./tools');
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const MODEL = process.env.TRAVIS_MODEL || 'gemini-3.8-flash';
+const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
 
-const SYSTEM_PROMPT = `You are Travis, a friendly and helpful personal assistant living on the user's Android phone.
-You can chat normally, and you can also perform real actions on the phone using the tools provided
-(setting alarms, showing notifications, speaking replies out loud, showing toast messages, controlling the flashlight, checking battery status, vibrating the phone, taking photos, adjusting volume, and opening links).
-Only use a tool when the user's request actually calls for that action. Keep spoken/toast text short and natural.`;
+const SYSTEM_PROMPT = `You are Travis, a fast personal Android assistant. Execute the user's requested phone action when a safe tool exists. You may call multiple tools for a multi-action request. Do not explain how to do something when the user asked you to do it. Keep replies extremely short after an action. Never invent a successful action: if a tool fails, say it failed. Prefer direct action over conversation.`;
 
-const tools = [
-  {
-    functionDeclarations: [
-      {
-        name: "set_alarm",
-        description: "Set an alarm on the phone for a specific time.",
-        parameters: {
-          type: Type.OBJECT,
-          properties: {
-            hour: { type: Type.INTEGER, description: "Hour in 24-hour format (0-23)" },
-            minute: { type: Type.INTEGER, description: "Minute (0-59)" },
-            label: { type: Type.STRING, description: "Short label for the alarm" },
-          },
-          required: ["hour", "minute"],
-        },
-      },
-      {
-        name: "show_notification",
-        description: "Show a notification on the phone's notification shade.",
-        parameters: {
-          type: Type.OBJECT,
-          properties: {
-            title: { type: Type.STRING },
-            content: { type: Type.STRING },
-          },
-          required: ["title", "content"],
-        },
-      },
-      {
-        name: "speak",
-        description: "Speak a short message out loud using text-to-speech.",
-        parameters: {
-          type: Type.OBJECT,
-          properties: {
-            text: { type: Type.STRING },
-          },
-          required: ["text"],
-        },
-      },
-      {
-        name: "show_toast",
-        description: "Show a brief on-screen popup message (a toast).",
-        parameters: {
-          type: Type.OBJECT,
-          properties: {
-            text: { type: Type.STRING },
-          },
-          required: ["text"],
-        },
-      },
-      {
-        name: "set_flashlight",
-        description: "Turn the phone flashlight on or off.",
-        parameters: {
-          type: Type.OBJECT,
-          properties: {
-            state: { type: Type.STRING, description: "Either on or off" },
-          },
-          required: ["state"],
-        },
-      },
-      {
-        name: "get_battery_status",
-        description: "Check and announce the phone battery percentage and charging status.",
-        parameters: { type: Type.OBJECT, properties: {} },
-      },
-      {
-        name: "vibrate",
-        description: "Vibrate the phone.",
-        parameters: {
-          type: Type.OBJECT,
-          properties: {
-            duration_ms: { type: Type.INTEGER, description: "Duration in milliseconds, default 500" },
-          },
-        },
-      },
-      {
-        name: "take_photo",
-        description: "Take a photo using the phone back camera and save it.",
-        parameters: { type: Type.OBJECT, properties: {} },
-      },
-      {
-        name: "set_volume",
-        description: "Set the phone media volume.",
-        parameters: {
-          type: Type.OBJECT,
-          properties: {
-          level: { type: Type.INTEGER, description: "Volume percent from 0 to 100" },
-          },
-          required: ["level"],
-        },
-      },
-      {
-        name: "open_url",
-        description: "Open a website or app link in the browser.",
-        parameters: {
-          type: Type.OBJECT,
-          properties: {
-            url: { type: Type.STRING, description: "The URL to open, e.g. https://youtube.com" },
-          },
-          required: ["url"],
-        },
-      },
-    ],
-  },
-];
+const tools = [{ functionDeclarations: toolDeclarations }];
 
-function runCommand(cmd, args) {
-  return new Promise((resolve) => {
-    execFile(cmd, args, (err, stdout, stderr) => {
-      if (err) {
-        console.error(`Error running ${cmd}:`, err.message);
-        resolve({ success: false, error: err.message });
-      } else {
-        resolve({ success: true, output: stdout.trim() });
-      }
-    });
-  });
+function parseClock(text) {
+  const m = text.match(/\b(?:at\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+  if (!m) return null;
+  let hour = Number(m[1]);
+  const minute = Number(m[2] || 0);
+  const ap = m[3]?.toLowerCase();
+  if (minute > 59) return null;
+  if (ap === 'pm' && hour < 12) hour += 12;
+  if (ap === 'am' && hour === 12) hour = 0;
+  if (hour > 23) return null;
+  return { hour, minute };
 }
 
-async function executeTool(name, args) {
-  switch (name) {
-    case "set_alarm": {
-      const cmdArgs = [
-        "start", "-a", "android.intent.action.SET_ALARM",
-        "--ei", "android.intent.extra.alarm.HOUR", String(args.hour),
-        "--ei", "android.intent.extra.alarm.MINUTES", String(args.minute),
-        "--ez", "android.intent.extra.alarm.SKIP_UI", "true",
-      ];
-      if (args.label) cmdArgs.push("-e", "android.intent.extra.alarm.MESSAGE", args.label);
-      return runCommand("am", cmdArgs);
-    }
-    case "show_notification": {
-      return runCommand("termux-notification", [
-        "--title", args.title,
-        "--content", args.content,
-      ]);
-    }
-    case "speak": {
-      return runCommand("termux-tts-speak", [args.text]);
-    }
-    case "show_toast": {
-      return runCommand("termux-toast", [args.text]);
-    }
-    case "set_flashlight": {
-      return runCommand("termux-torch", [args.state === "on" ? "on" : "off"]);
-    }
-    case "get_battery_status": {
-      const result = await runCommand("termux-battery-status", []);
-      if (result.success) {
-        const info = JSON.parse(result.output);
-        const msg = `Battery is at ${info.percentage} percent, ${info.status}.`;
-        await runCommand("termux-toast", [msg]);
-        return { success: true, output: msg };
-      }
-      return result;
-    }
-    case "vibrate": {
-      const duration = args.duration_ms ? String(args.duration_ms) : "500";
-      return runCommand("termux-vibrate", ["-d", duration]);
-    }
-    case "take_photo": {
-      const dir = process.env.HOME + "/storage/shared/Pictures";
-        const path = `${dir}/travis_photo_${Date.now()}.jpg`;
-      const result = await runCommand("termux-camera-photo", ["-c", "0", path]);
-      if (result.success) {
-          await runCommand("termux-media-scan", [path]);
-        await runCommand("termux-toast", ["Photo saved: " + path]);
-      }
-      return result;
-    }
-    case "set_volume": {
-        const pct = Math.max(0, Math.min(100, args.level));
-        const status = await runCommand("termux-volume", []);
-        const streams = JSON.parse(status.output);
-        const music = streams.find(s => s.stream === "music");
-        const target = Math.round((pct / 100) * music.max_volume);
-        return runCommand("termux-volume", ["music", String(target)]);
-    }
-    case "open_url": {
-      return runCommand("termux-open-url", [args.url]);
-    }
-    default:
-      return { success: false, error: `Unknown tool: ${name}` };
+function localAction(text) {
+  const t = text.trim().toLowerCase();
+  if (!t) return null;
+
+  if (/\b(?:turn|switch|enable|disable)?\s*(?:the\s*)?(?:flashlight|torch|flash)\b/.test(t)) {
+    return { name: 'set_flashlight', args: { state: /\b(?:off|disable|turn off|switch off)\b/.test(t) ? 'off' : 'on' } };
   }
+  if (/\b(?:battery|charge|charging)\b/.test(t)) return { name: 'get_battery_status', args: {} };
+  if (/\b(?:take|capture)\b.*\b(?:photo|picture|pic)\b|\b(?:photo|picture)\s+(?:of|from)\b/.test(t)) return { name: 'take_photo', args: {} };
+  if (/\bvibrate\b|\bbuzz\b/.test(t)) return { name: 'vibrate', args: { duration_ms: 500 } };
+
+  const volume = t.match(/\b(?:volume|sound)\s*(?:to|at|=)?\s*(\d{1,3})\s*%?/);
+  if (volume) return { name: 'set_volume', args: { level: Number(volume[1]) } };
+  const brightness = t.match(/\b(?:brightness|screen)\s*(?:to|at|=)?\s*(\d{1,3})\s*%?/);
+  if (brightness) return { name: 'set_brightness', args: { level: Number(brightness[1]) } };
+
+  const open = text.match(/\bopen\s+(https?:\/\/\S+)/i);
+  if (open) return { name: 'open_url', args: { url: open[1].replace(/[),.]+$/, '') } };
+
+  if (/\b(?:set|make)\s+(?:an?\s+)?alarm\b/.test(t)) {
+    const clock = parseClock(t);
+    if (clock) return { name: 'set_alarm', args: { ...clock, label: 'Travis alarm' } };
+  }
+
+  return null;
 }
 
-const history = [];
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+async function runLocalFirst(text) {
+  const action = localAction(text);
+  if (!action) return null;
+  const result = await executeTool(action.name, action.args);
+  return { handled: true, action, result };
+}
 
-function ask(question) {
-  return new Promise((resolve) => rl.question(question, resolve));
+async function runAI(text, history) {
+  if (!ai) throw new Error('GEMINI_API_KEY is not set');
+  history.push({ role: 'user', parts: [{ text }] });
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: history,
+    config: { systemInstruction: SYSTEM_PROMPT, tools },
+  });
+  const content = response.candidates?.[0]?.content;
+  const calls = response.functionCalls || (content?.parts || []).filter(p => p.functionCall).map(p => p.functionCall);
+
+  if (calls.length) {
+    const results = await Promise.all(calls.map(async call => ({ call, result: await executeTool(call.name, call.args || {}) })));
+    history.push({ role: 'model', parts: content?.parts || [] });
+    const failed = results.filter(x => !x.result.success);
+    return failed.length
+      ? `I couldn't complete ${failed.map(x => x.call.name).join(', ')}.`
+      : 'Done.';
+  }
+
+  const reply = response.text || 'Done.';
+  history.push({ role: 'model', parts: content?.parts || [{ text: reply }] });
+  return reply;
+}
+
+async function handle(text, history = []) {
+  const local = await runLocalFirst(text);
+  if (local) return local.result.success ? 'Done.' : `I couldn't do that: ${local.result.error}`;
+  return runAI(text, history);
 }
 
 async function main() {
-  if (!process.env.GEMINI_API_KEY) {
-    console.error("GEMINI_API_KEY is not set. Run 'source ~/.bashrc' or check your .bashrc.");
-    process.exit(1)
-}
-
-  console.log("Travis is ready. Type a message (or 'exit' to quit).\n");
-
-  while (true) {
-    const userInput = await ask("You: ");
-    if (userInput.trim().toLowerCase() === "exit") break;
-
-    history.push({ role: "user", parts: [{ text: userInput }] });
-
-    const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
-      contents: history,
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        tools,
-      },
-    });
-
-    const candidate = response.candidates[0];
-    const parts = candidate.content.parts;
-
-    let spokenReply = "";
-
-    for (const part of parts) {
-      if (part.functionCall) {
-        const { name, args } = part.functionCall;
-        console.log(`[Travis is using tool: ${name}]`);
-        const result = await executeTool(name, args);
-        if (!result.success) {
-          console.log(`[Tool error: ${result.error}]`);
-        }
-      } else if (part.text) {
-        spokenReply += part.text;
-      }
-    }
-
-    if (spokenReply) {
-      console.log("Travis:", spokenReply);
-    }
-
-    history.push({ role: "model", parts });
+  if (!ai) {
+    console.warn('GEMINI_API_KEY is not set. Local phone commands still work; AI fallback is disabled.');
   }
+  const history = [];
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const ask = q => new Promise(resolve => rl.question(q, resolve));
 
+  console.log(`Travis v2 ready (${MODEL}). Type a message or "exit".\n`);
+  while (true) {
+    const input = (await ask('You: ')).trim();
+    if (input.toLowerCase() === 'exit') break;
+    if (!input) continue;
+    try {
+      const reply = await handle(input, history);
+      console.log('Travis:', reply);
+    } catch (error) {
+      console.error('Travis error:', error.message);
+    }
+  }
   rl.close();
-  console.log("Goodbye!");
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { parseClock, localAction, handle };
