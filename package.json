@@ -1,6 +1,6 @@
 {
-  "name": "travis-assistant",
-  "version": "2.1.0",
+  "name": "claude-assistant",
+  "version": "1.0.0",
   "description": "Fast local-first Android assistant for Termux with a native streaming voice companion",
   "main": "index.js",
   "scripts": {
@@ -15,6 +15,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.121.0",
     "@google/genai": "^2.19.0"
   }
 }
