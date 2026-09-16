@@ -60,7 +60,10 @@ async function executeTool(name, args = {}) {
         if (!music) return { success: false, error: 'Music volume stream not found' };
         return runCommand('termux-volume', ['music', String(Math.round(pct / 100 * music.max_volume))]);
       }
-      case 'set_brightness': return runCommand('termux-brightness', [String(Math.max(0, Math.min(100, Number(args.level))))]);
+      case 'set_brightness': {
+        const pct = Math.max(0, Math.min(100, Number(args.level)));
+        return runCommand('termux-brightness', [String(Math.round(pct * 255 / 100))]);
+      }
       case 'get_clipboard': return runCommand('termux-clipboard-get');
       case 'set_clipboard': return runCommand('termux-clipboard-set', [String(args.text)]);
       case 'open_url': return runCommand('termux-open-url', [String(args.url)]);
