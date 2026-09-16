@@ -49,7 +49,7 @@ public class VoiceService extends Service implements RecognitionListener {
         Notification n=new Notification.Builder(this,CHANNEL).setContentTitle("Travis is listening").setContentText("Say Travis followed by a command").setSmallIcon(android.R.drawable.ic_btn_speak_now).setOngoing(true).build();
         if(Build.VERSION.SDK_INT>=29) startForeground(7,n,ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE); else startForeground(7,n);
         tts=new TextToSpeech(this,status->{if(status==TextToSpeech.SUCCESS)configureVoice();else Log.e(TAG,"TTS init failed: "+status);},"com.google.android.tts");
-        tts.setOnUtteranceProgressListener(new UtteranceProgressListener(){public void onStart(String id){}public void onDone(String id){}public void onError(String id){}});
+        tts.setOnUtteranceProgressListener(new UtteranceProgressListener(){public void onStart(String id){}public void onDone(String id){}public void onError(String id){Log.e(TAG,"TTS utterance error: "+id);}});
         recognizerIntent=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         recognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
         recognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE,Locale.getDefault());
@@ -74,8 +74,7 @@ public class VoiceService extends Service implements RecognitionListener {
         }catch(Exception e){Log.e(TAG,"voice setup",e);}
     }
 
-    // Android SpeechRecognizer can throw if startListening is called while a previous
-    // recognition session is still cancelling. Serialize cancel -> start with a delay.
+    // SpeechRecognizer is stateful. Never start a new session while the previous one is cancelling.
     private void listen(long delay){
         if(stopping||recognizer==null)return;
         main.postDelayed(()->{
@@ -85,9 +84,9 @@ public class VoiceService extends Service implements RecognitionListener {
                 main.postDelayed(()->{
                     if(stopping||recognizer==null)return;
                     try{wakeDispatched=false;recognizer.startListening(recognizerIntent);listening=true;}
-                    catch(Exception e){Log.e(TAG,"startListening",e);listen(500);}
+                    catch(Exception e){Log.e(TAG,"startListening",e);listen(700);}
                 },300);
-            }catch(Exception e){Log.e(TAG,"cancelListening",e);listen(500);}
+            }catch(Exception e){Log.e(TAG,"cancelListening",e);listen(700);}
         },Math.max(0,delay));
     }
 
@@ -114,14 +113,21 @@ public class VoiceService extends Service implements RecognitionListener {
     private void sendToTravis(String text){
         commandMode=false;wakeDispatched=true;
         network.execute(()->{
-            HttpURLConnection c=null;
-            try{
-                c=(HttpURLConnection)new URL(ENDPOINT).openConnection();c.setRequestMethod("POST");c.setConnectTimeout(1200);c.setReadTimeout(5000);c.setDoOutput(true);c.setRequestProperty("Content-Type","application/json; charset=utf-8");
-                String body="{\"text\":\""+jsonEscape(text)+"\"}";try(OutputStream out=c.getOutputStream()){out.write(body.getBytes(StandardCharsets.UTF_8));}
-                int code=c.getResponseCode();
-                if(code>=200&&code<300){String response=readBody(c);String reply="Yeah.";try{JSONObject j=new JSONObject(response);reply=j.optString("reply",reply);}catch(Exception ignored){}speak(reply);}else speak("Travis bridge error");
-            }catch(Exception e){Log.e(TAG,"bridge",e);speak("Travis bridge is not reachable");}
-            finally{if(c!=null)c.disconnect();listen(500);}
+            Exception last=null;
+            for(int attempt=1;attempt<=3&&!stopping;attempt++){
+                HttpURLConnection c=null;
+                try{
+                    c=(HttpURLConnection)new URL(ENDPOINT).openConnection();c.setRequestMethod("POST");c.setConnectTimeout(1200);c.setReadTimeout(5000);c.setDoOutput(true);c.setRequestProperty("Content-Type","application/json; charset=utf-8");
+                    String body="{\"text\":\""+jsonEscape(text)+"\"}";try(OutputStream out=c.getOutputStream()){out.write(body.getBytes(StandardCharsets.UTF_8));}
+                    int code=c.getResponseCode();
+                    if(code>=200&&code<300){String response=readBody(c);String reply="Yeah.";try{JSONObject j=new JSONObject(response);reply=j.optString("reply",reply);}catch(Exception ignored){}speak(reply);last=null;break;}
+                    last=new Exception("HTTP "+code);
+                }catch(Exception e){last=e;Log.e(TAG,"bridge attempt "+attempt,e);}
+                finally{if(c!=null)c.disconnect();}
+                if(attempt<3)try{Thread.sleep(attempt*350L);}catch(InterruptedException e){Thread.currentThread().interrupt();break;}
+            }
+            if(last!=null&&!stopping)speak("Travis bridge is not reachable");
+            listen(500);
         });
     }
 
