@@ -11,7 +11,7 @@
         </intent>
     </queries>
 
-    <application android:theme="@style/AppTheme" android:label="Travis Voice" android:allowBackup="false" android:supportsRtl="true">
+    <application android:theme="@style/AppTheme" android:label="Travis Voice" android:allowBackup="false" android:supportsRtl="true" android:usesCleartextTraffic="true">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
