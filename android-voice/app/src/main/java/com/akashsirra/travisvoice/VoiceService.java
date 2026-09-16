@@ -37,10 +37,9 @@ public class VoiceService extends Service implements RecognitionListener {
     private static final String CHANNEL = "travis_voice";
     private static final String ENDPOINT = "http://127.0.0.1:8787/voice";
 
-    // Original "RAGE" voice profile: low, slow, dry and laid-back.
-    // This intentionally uses Android's available TTS voices rather than cloning a real person.
-    private static final float RAGE_PITCH = 0.72f;
-    private static final float RAGE_RATE = 0.88f;
+    // Original Travis voice profile: low, slow and laid-back. This does not clone a real person.
+    private static final float RAGE_PITCH = 0.62f;
+    private static final float RAGE_RATE = 0.90f;
 
     private SpeechRecognizer recognizer;
     private TextToSpeech tts;
@@ -65,7 +64,7 @@ public class VoiceService extends Service implements RecognitionListener {
 
         tts = new TextToSpeech(this, status -> {
             if (status == TextToSpeech.SUCCESS) configureRageVoice();
-        });
+        }, "com.google.android.tts");
         recognizerIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         recognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
         recognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
@@ -89,21 +88,31 @@ public class VoiceService extends Service implements RecognitionListener {
             tts.setPitch(RAGE_PITCH);
             tts.setSpeechRate(RAGE_RATE);
 
-            // Prefer an English male voice when the installed engine exposes one.
+            // Google TTS exposes gender in voice features on many devices. Prefer a real
+            // English male voice instead of merely lowering a female/default voice's pitch.
             Set<Voice> voices = tts.getVoices();
+            Voice best = null;
             if (voices != null) {
-                Voice candidate = null;
                 for (Voice voice : voices) {
                     if (voice == null || voice.getLocale() == null) continue;
                     Locale locale = voice.getLocale();
+                    if (!"en".equalsIgnoreCase(locale.getLanguage()) || !"US".equalsIgnoreCase(locale.getCountry())) continue;
                     String name = voice.getName() == null ? "" : voice.getName().toLowerCase(Locale.ROOT);
-                    if (locale.getLanguage().equals(Locale.US.getLanguage())
-                            && (name.contains("male") || name.contains("man"))) {
-                        candidate = voice;
-                        break;
-                    }
+                    String features = voice.getFeatures() == null ? "" : voice.getFeatures().toString().toLowerCase(Locale.ROOT);
+                    boolean male = name.contains("#male") || name.contains("male") || features.contains("male");
+                    if (!male) continue;
+
+                    // Prefer local male voices so Travis stays fast and works offline.
+                    if (name.contains("#male_1-local")) { best = voice; break; }
+                    if (best == null && name.contains("#male") && !voice.isNetworkConnectionRequired()) best = voice;
+                    if (best == null && male) best = voice;
                 }
-                if (candidate != null) tts.setVoice(candidate);
+            }
+            if (best != null) {
+                tts.setVoice(best);
+                Log.i(TAG, "RAGE male voice: " + best.getName());
+            } else {
+                Log.w(TAG, "No English male Google TTS voice found; using pitch-shifted default");
             }
         } catch (Exception e) {
             Log.w(TAG, "RAGE voice setup", e);
@@ -173,7 +182,7 @@ public class VoiceService extends Service implements RecognitionListener {
                 int code = c.getResponseCode();
                 if (code >= 200 && code < 300) {
                     String response = readBody(c);
-                    String reply = "Done.";
+                    String reply = "Yeah.";
                     try {
                         JSONObject json = new JSONObject(response);
                         reply = json.optString("reply", reply);
