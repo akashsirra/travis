@@ -13,6 +13,6 @@ test('routes common apps locally', () => assert.deepEqual(localAction('open yout
 test('routes wifi locally', () => assert.deepEqual(localAction('turn wifi off'), { name: 'set_wifi', args: { state: 'off' } }));
 test('routes bluetooth locally', () => assert.deepEqual(localAction('bluetooth on'), { name: 'set_bluetooth', args: { state: 'on' } }));
 test('routes media locally', () => assert.deepEqual(localAction('next song'), { name: 'media_control', args: { action: 'next' } }));
-test('routes timer locally', () => assert.deepEqual(localAction('set timer for 5 minutes'), { name: 'set_timer', args: { seconds: 300 } }));
+test('routes timer locally', () => assert.deepEqual(localAction('set timer for 5 minutes'), { name: 'set_timer', args: { seconds: 300, label: 'Travis timer' } }));
 test('routes lock locally', () => assert.deepEqual(localAction('lock the phone'), { name: 'lock_screen', args: {} }));
 test('unknown natural language falls through', () => assert.equal(localAction('what is the weather today'), null));
