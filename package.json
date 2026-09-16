@@ -1,13 +1,16 @@
 {
-  "name": "claude-assistant",
-  "version": "1.0.0",
-  "description": "",
+  "name": "travis-phone-assistant",
+  "version": "2.0.0",
+  "description": "Fast local-first Android assistant for Termux",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js",
+    "voice": "node wake_listen.js",
+    "check": "node --check index.js && node --check tools.js && node --check wake_listen.js",
+    "test": "node --test"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["android", "termux", "assistant", "gemini", "vosk"],
+  "author": "Akash Sirra",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
