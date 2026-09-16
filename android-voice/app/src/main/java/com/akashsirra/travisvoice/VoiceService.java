@@ -15,6 +15,7 @@ import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.Voice;
 import android.util.Log;
 
 import org.json.JSONObject;
@@ -27,6 +28,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -34,6 +36,11 @@ public class VoiceService extends Service implements RecognitionListener {
     private static final String TAG = "TravisVoice";
     private static final String CHANNEL = "travis_voice";
     private static final String ENDPOINT = "http://127.0.0.1:8787/voice";
+
+    // Original "RAGE" voice profile: low, slow, dry and laid-back.
+    // This intentionally uses Android's available TTS voices rather than cloning a real person.
+    private static final float RAGE_PITCH = 0.72f;
+    private static final float RAGE_RATE = 0.88f;
 
     private SpeechRecognizer recognizer;
     private TextToSpeech tts;
@@ -56,7 +63,9 @@ public class VoiceService extends Service implements RecognitionListener {
         if (Build.VERSION.SDK_INT >= 29) startForeground(7, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
         else startForeground(7, n);
 
-        tts = new TextToSpeech(this, status -> { if (status == TextToSpeech.SUCCESS) tts.setLanguage(Locale.US); });
+        tts = new TextToSpeech(this, status -> {
+            if (status == TextToSpeech.SUCCESS) configureRageVoice();
+        });
         recognizerIntent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         recognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
         recognizerIntent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault());
@@ -71,6 +80,34 @@ public class VoiceService extends Service implements RecognitionListener {
         recognizer = SpeechRecognizer.createSpeechRecognizer(this);
         recognizer.setRecognitionListener(this);
         listen(0);
+    }
+
+    private void configureRageVoice() {
+        if (tts == null) return;
+        try {
+            tts.setLanguage(Locale.US);
+            tts.setPitch(RAGE_PITCH);
+            tts.setSpeechRate(RAGE_RATE);
+
+            // Prefer an English male voice when the installed engine exposes one.
+            Set<Voice> voices = tts.getVoices();
+            if (voices != null) {
+                Voice candidate = null;
+                for (Voice voice : voices) {
+                    if (voice == null || voice.getLocale() == null) continue;
+                    Locale locale = voice.getLocale();
+                    String name = voice.getName() == null ? "" : voice.getName().toLowerCase(Locale.ROOT);
+                    if (locale.getLanguage().equals(Locale.US.getLanguage())
+                            && (name.contains("male") || name.contains("man"))) {
+                        candidate = voice;
+                        break;
+                    }
+                }
+                if (candidate != null) tts.setVoice(candidate);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "RAGE voice setup", e);
+        }
     }
 
     private void listen(long delayMs) {
@@ -99,7 +136,7 @@ public class VoiceService extends Service implements RecognitionListener {
         String remainder = text.substring(pos + "travis".length()).trim();
         if (remainder.isEmpty()) {
             commandMode = true;
-            speak("Yes?");
+            speak("Yeah?");
             listen(0);
         } else {
             sendToTravis(remainder);
