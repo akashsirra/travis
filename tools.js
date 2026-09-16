@@ -42,7 +42,7 @@ async function executeTool(name, args = {}) {
         if (!r.success) return r;
         try {
           const info = JSON.parse(r.output);
-          return { success: true, output: JSON.stringify({ percentage: info.percentage, status: info.status, plugged: info.plugged })) };
+          return { success: true, output: JSON.stringify({ percentage: info.percentage, status: info.status, plugged: info.plugged }) };
         } catch { return { success: true, output: r.output }; }
       }
       case 'vibrate': return runCommand('termux-vibrate', ['-d', String(Math.max(1, Math.min(5000, args.duration_ms || 500)))]);
