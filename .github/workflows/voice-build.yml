@@ -13,6 +13,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
       - name: Verify Android SDK
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list_installed | grep -E 'platforms;android-36|build-tools;36' || true
