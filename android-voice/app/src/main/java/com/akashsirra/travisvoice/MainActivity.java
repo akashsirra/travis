@@ -16,7 +16,7 @@ public class MainActivity extends android.app.Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         LinearLayout root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(48,80,48,48); root.setGravity(Gravity.CENTER_HORIZONTAL);
-        TextView title=new TextView(this); title.setText("TRAVIS VOICE v1.2"); title.setTextSize(28); title.setGravity(Gravity.CENTER); root.addView(title,new LinearLayout.LayoutParams(-1,-2));
+        TextView title=new TextView(this); title.setText("TRAVIS VOICE v1.3"); title.setTextSize(28); title.setGravity(Gravity.CENTER); root.addView(title,new LinearLayout.LayoutParams(-1,-2));
         status=new TextView(this); status.setText("Distinct deep male voice • Google TTS"); status.setTextSize(16); status.setGravity(Gravity.CENTER); root.addView(status,new LinearLayout.LayoutParams(-1,-2));
         Button start=new Button(this); start.setText("START TRAVIS"); root.addView(start,new LinearLayout.LayoutParams(-1,-2));
         Button test=new Button(this); test.setText("TEST TRAVIS VOICE"); root.addView(test,new LinearLayout.LayoutParams(-1,-2));
